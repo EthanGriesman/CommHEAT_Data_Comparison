@@ -1088,12 +1088,12 @@ def compute_mse_for_row(row: pd.Series, hourly: pd.DataFrame, obs_start: pd.Time
     print(f"\n  Comparison 1: T_predicted (averaged across archetypes) vs actual_average_temperature")
     print(f"  Actual Average Temperature (Hobologger): {hobo_avg_mean:.3f} °C")
     print(f"  T_predicted (Averaged Archetypes): {t_predicted_mean:.3f} °C")
-    print(f"  Final Calculated MSE: {mse_predicted_avg:.6f} C²")
+    print(f"  Final Calculated MSE: {mse_predicted_avg:.6f}")
 
     print(f"\n  Comparison 2: T_predicted (averaged across archetypes) vs actual_max_temperature")
     print(f"  Actual Max Temperature (Hobologger): {hobo_max_mean:.3f} °C")
     print(f"  T_predicted (Averaged Archetypes): {t_predicted_mean:.3f} °C")
-    print(f"  Final Calculated MSE: {mse_predicted_max:.6f} C²")
+    print(f"  Final Calculated MSE: {mse_predicted_max:.6f}")
     
     print(f"\n{'='*80}\n")
 
@@ -1275,7 +1275,7 @@ def main():
 
     # run mse analysis
     logger.info(color_text("\n=== Computing MSE ===\n", "96"))
-    logger.info("Calculating Mean Squared Error between HOBO measurements and averaged archetype predictions for each address covering the period of intersection\n")
+    logger.info("Comparison between HOBO data and averaged archetype predictions for each address in period of intersection\n")
     mse_results = run_analysis(mapping, 'mse', "Computing MSE")
 
     # save mse results
