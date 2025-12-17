@@ -99,6 +99,9 @@ class PlottingManager:
     # ============================================================
     # INTERSECTION – AVERAGED ARCHETYPES
     # ============================================================
+    # ============================================================
+    # INTERSECTION – AVERAGED ARCHETYPES
+    # ============================================================
     def plot_intersection_comparison_averaged(
         self,
         combined_data: pd.DataFrame,
@@ -113,10 +116,29 @@ class PlottingManager:
 
         fig, ax = plt.subplots(figsize=(14, 6))
 
+        # Plot individual archetype temperatures with light colors
+        archetype_list = [a.strip() for a in archetypes.split(",")]
+        colors = ["#90EE90", "#FFD700", "#87CEEB", "#FFB6C1"]
+
+        for i, arch in enumerate(archetype_list):
+            col_name = f"{arch}_temp"
+            if col_name in combined_data.columns:
+                ax.plot(
+                    combined_data.index,
+                    combined_data[col_name],
+                    label=f"{arch} (individual)",
+                    color=colors[i % len(colors)],
+                    linewidth=1.0,
+                    linestyle=":",
+                    alpha=0.5,
+                    zorder=1,
+                )
+
+        # Plot averaged prediction
         ax.plot(
             combined_data.index,
             combined_data["T_predicted"],
-            label="T_predicted",
+            label=f"T_predicted (avg: {archetypes})",
             color="#9370DB",
             linewidth=2.5,
             alpha=0.75,
@@ -124,6 +146,7 @@ class PlottingManager:
             zorder=3,
         )
 
+        # Plot HOBO max temperature
         ax.plot(
             combined_data.index,
             combined_data["actual_max_temperature"],
@@ -134,6 +157,7 @@ class PlottingManager:
             zorder=4,
         )
 
+        # Plot HOBO average temperature
         ax.plot(
             combined_data.index,
             combined_data["actual_average_temperature"],
@@ -155,7 +179,7 @@ class PlottingManager:
             fontweight="bold",
         )
 
-        ax.legend(loc="best", fontsize=10, framealpha=0.95, edgecolor="black")
+        ax.legend(loc="best", fontsize=9, ncol=2, framealpha=0.95, edgecolor="black")
         ax.grid(True, alpha=0.3, linestyle="--", linewidth=0.5)
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%m/%d %H:%M"))
         fig.autofmt_xdate(rotation=45)
