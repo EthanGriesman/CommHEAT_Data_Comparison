@@ -78,7 +78,35 @@ PLOT_STYLE = {
 COLUMN_TYPES = {
     'time': ['date', 'time', 'timestamp'],
     'temp': ['temperature', 'zone mean air temperature'],
-    'rh': ['rh', 'relative humidity']
+}
+
+# heat event and baseline period definitions
+HEAT_EVENTS = {
+    'H1': {
+        'start': '2025-08-07',
+        'end': '2025-08-10',
+        'name': 'Heat Event 1'
+    },
+    'H2': {
+        'start': '2025-08-15',
+        'end': '2025-08-19',
+        'name': 'Heat Event 2'
+    },
+    'H3': {
+        'start': '2025-09-12',
+        'end': '2025-09-16',
+        'name': 'Heat Event 3'
+    },
+    'B1': {
+        'start': '2025-09-26',
+        'end': '2025-09-30',
+        'name': 'Baseline Period 1'
+    },
+    'B2': {
+        'start': '2025-10-09',
+        'end': '2025-10-12',
+        'name': 'Baseline Period 2'
+    },
 }
 
 
@@ -113,11 +141,23 @@ class Config:
         self.comparison_dir.mkdir(exist_ok=True, parents=True)
         self.plot_dir = self.output_dir / "plots"
         self.plot_dir.mkdir(exist_ok=True, parents=True)
-        self.hobo_output_dir = self.output_dir / "hobo_processed"
+        self.hobo_output_dir = self.output_dir / "hobo_data_processed"
         self.hobo_output_dir.mkdir(exist_ok=True, parents=True)
-        # create humidity subdirectory
-        self.humidity_dir = self.plot_dir / "humidity"
-        self.humidity_dir.mkdir(exist_ok=True, parents=True)
+        # create heat events subdirectory
+        self.heat_events_dir = self.plot_dir / "heat_events_each_archetype"
+        self.heat_events_dir.mkdir(exist_ok=True, parents=True)
+        # create averaged heat events subdirectory
+        self.heat_events_averaged_dir = self.plot_dir / "heat_events_averaged_archetypes"
+        self.heat_events_averaged_dir.mkdir(exist_ok=True, parents=True)
+        # create period intersection subdirectory
+        self.period_intersection_dir = self.plot_dir / "period_intersection"
+        self.period_intersection_dir.mkdir(exist_ok=True, parents=True)
+        # create ac/noac subdirectory
+        self.ac_noac_dir = self.plot_dir / "ac_noac"
+        self.ac_noac_dir.mkdir(exist_ok=True, parents=True)
+        # create averaged comparisons subdirectory in plots
+        self.averaged_comparisons_dir = self.plot_dir / "averaged_comparisons"
+        self.averaged_comparisons_dir.mkdir(exist_ok=True, parents=True)
 
         # set default target columns if not provided
         if self.target_columns is None:
@@ -602,6 +642,269 @@ def load_ac_noac_series(
 
 
 # ============================================================
+# HEAT EVENT PLOTTING
+# ============================================================
+
+def plot_heat_events_for_row(row: pd.Series, hourly: pd.DataFrame, arch: str) -> None:
+    """Generate plots for each heat event and baseline period"""
+    # iterate through all heat events and baseline periods
+    for event_id, event_info in HEAT_EVENTS.items():
+        # parse event start and end dates
+        event_start = pd.to_datetime(event_info['start'])
+        event_end = pd.to_datetime(event_info['end'])
+        
+        # extract hobo data for this event period
+        hobo_slice = hourly.loc[event_start:event_end].copy()
+        
+        # skip if no data for this period
+        if hobo_slice.empty:
+            logger.debug(f"No HOBO data for {row['address']} during {event_id}")
+            continue
+        
+        # process each archetype separately (existing logic)
+        for archetype in [a.strip() for a in arch.split(",") if a.strip()]:
+            # load simulation data for archetype
+            sim_df = load_simulation(archetype, target_year=2025, sim_dir=config.latest_ep_dir)
+            
+            if sim_df is None or sim_df.empty:
+                logger.debug(f"No simulation data for {archetype} during {event_id}")
+                continue
+            
+            # extract simulation data for this event period
+            sim_slice = sim_df.loc[event_start:event_end].copy()
+            
+            if sim_slice.empty:
+                logger.debug(f"No simulation data for {archetype} during {event_id}")
+                continue
+            
+            # create common hourly index
+            common_idx = pd.date_range(
+                start=event_start,
+                end=event_end,
+                freq="h"
+            )
+            
+            # align hobo and simulation data
+            hobo_aligned = hobo_slice.reindex(common_idx)
+            sim_aligned = sim_slice.reindex(common_idx)
+            
+            # combine datasets
+            combined = hobo_aligned.join(sim_aligned, how="outer")
+            
+            if combined.empty:
+                continue
+            
+            # create output filename
+            label = f"{row['clean_address']}_{archetype}_{event_id}"
+            out_path = config.heat_events_dir / f"{label}.png"
+            
+            # use plottingmanager to create heat event plot
+            config.plotter.plot_heat_event(
+                combined_data=combined,
+                address=row['address'],
+                archetype=archetype,
+                event_name=event_info['name'],
+                event_id=event_id,
+                output_path=out_path
+            )
+            
+            logger.info(f"Created heat event plot: {out_path.name}")
+
+
+def plot_averaged_heat_events_for_row(row: pd.Series, hourly: pd.DataFrame, arch: str) -> None:
+    """Generate averaged archetype plots for each heat event and baseline period"""
+    archetypes = [a.strip() for a in arch.split(",") if a.strip()]
+    
+    # iterate through all heat events and baseline periods
+    for event_id, event_info in HEAT_EVENTS.items():
+        # parse event start and end dates
+        event_start = pd.to_datetime(event_info['start'])
+        event_end = pd.to_datetime(event_info['end'])
+        
+        # extract hobo data for this event period
+        hobo_slice = hourly.loc[event_start:event_end].copy()
+        
+        # skip if no data for this period
+        if hobo_slice.empty:
+            logger.debug(f"No HOBO data for {row['address']} during {event_id}")
+            continue
+        
+        # collect archetype series for averaging
+        archetype_series_list = []
+        archetype_names = []
+        
+        for archetype in archetypes:
+            # load simulation data for archetype
+            sim_df = load_simulation(archetype, target_year=2025, sim_dir=config.latest_ep_dir)
+            
+            if sim_df is None or sim_df.empty:
+                logger.debug(f"No simulation data for {archetype} during {event_id}")
+                continue
+            
+            # extract simulation data for this event period
+            sim_slice = sim_df.loc[event_start:event_end].copy()
+            
+            if sim_slice.empty:
+                logger.debug(f"No simulation data for {archetype} during {event_id}")
+                continue
+            
+            archetype_series_list.append(sim_slice)
+            archetype_names.append(archetype)
+        
+        # skip if no archetype data available
+        if not archetype_series_list:
+            logger.debug(f"No archetype data for {row['address']} during {event_id}")
+            continue
+        
+        # create common hourly index
+        common_idx = pd.date_range(
+            start=event_start,
+            end=event_end,
+            freq="h"
+        )
+        
+        # align hobo data to common index
+        hobo_aligned = hobo_slice.reindex(common_idx)
+        
+        # align all archetype series and collect for averaging
+        aligned_archetype_temps = []
+        for sim_slice in archetype_series_list:
+            sim_aligned = sim_slice.reindex(common_idx)
+            aligned_archetype_temps.append(sim_aligned["archetype_internal_temperature"])
+        
+        # calculate average predicted temperature across all archetypes at each timestep
+        if aligned_archetype_temps:
+            t_predicted_df = pd.concat(aligned_archetype_temps, axis=1)
+            t_predicted_df.columns = archetype_names
+            t_predicted = t_predicted_df.mean(axis=1)
+        else:
+            logger.debug(f"No aligned archetype data for {row['address']} during {event_id}")
+            continue
+        
+        # combine hobo and predicted data
+        combined = hobo_aligned.copy()
+        combined['T_predicted'] = t_predicted
+        
+        # also add individual archetype temps for comparison
+        for i, arch_name in enumerate(archetype_names):
+            combined[f'{arch_name}_temp'] = aligned_archetype_temps[i]
+        
+        if combined.empty:
+            continue
+        
+        # create output filename
+        label = f"{row['clean_address']}_averaged_{event_id}"
+        out_path = config.heat_events_averaged_dir / f"{label}.png"
+        
+        # use plottingmanager to create averaged heat event plot
+        config.plotter.plot_heat_event_averaged(
+            combined_data=combined,
+            address=row['address'],
+            archetypes=", ".join(archetype_names),
+            event_name=event_info['name'],
+            event_id=event_id,
+            output_path=out_path
+        )
+        
+        logger.info(f"Created averaged heat event plot: {out_path.name}")
+
+
+def plot_period_intersection_for_row(row: pd.Series, hourly: pd.DataFrame, 
+                                      period_intersection_start: pd.Timestamp,
+                                      period_intersection_end: pd.Timestamp,
+                                      arch: str) -> None:
+    """Generate averaged archetype plot for entire period intersection"""
+    archetypes = [a.strip() for a in arch.split(",") if a.strip()]
+    
+    # extract hobo data for period intersection
+    hobo_slice = hourly.loc[period_intersection_start:period_intersection_end].copy()
+    
+    # skip if no data for this period
+    if hobo_slice.empty:
+        logger.debug(f"No HOBO data for {row['address']} during period intersection")
+        return
+    
+    # collect archetype series for averaging
+    archetype_series_list = []
+    archetype_names = []
+    
+    for archetype in archetypes:
+        # load simulation data for archetype
+        sim_df = load_simulation(archetype, target_year=2025, sim_dir=config.latest_ep_dir)
+        
+        if sim_df is None or sim_df.empty:
+            logger.debug(f"No simulation data for {archetype} during period intersection")
+            continue
+        
+        # extract simulation data for period intersection
+        sim_slice = sim_df.loc[period_intersection_start:period_intersection_end].copy()
+        
+        if sim_slice.empty:
+            logger.debug(f"No simulation data for {archetype} during period intersection")
+            continue
+        
+        archetype_series_list.append(sim_slice)
+        archetype_names.append(archetype)
+    
+    # skip if no archetype data available
+    if not archetype_series_list:
+        logger.debug(f"No archetype data for {row['address']} during period intersection")
+        return
+    
+    # create common hourly index
+    common_idx = pd.date_range(
+        start=period_intersection_start,
+        end=period_intersection_end,
+        freq="h"
+    )
+    
+    # align hobo data to common index
+    hobo_aligned = hobo_slice.reindex(common_idx)
+    
+    # align all archetype series and collect for averaging
+    aligned_archetype_temps = []
+    for sim_slice in archetype_series_list:
+        sim_aligned = sim_slice.reindex(common_idx)
+        aligned_archetype_temps.append(sim_aligned["archetype_internal_temperature"])
+    
+    # calculate average predicted temperature across all archetypes at each timestep
+    if aligned_archetype_temps:
+        t_predicted_df = pd.concat(aligned_archetype_temps, axis=1)
+        t_predicted_df.columns = archetype_names
+        t_predicted = t_predicted_df.mean(axis=1)
+    else:
+        logger.debug(f"No aligned archetype data for {row['address']} during period intersection")
+        return
+    
+    # combine hobo and predicted data
+    combined = hobo_aligned.copy()
+    combined['T_predicted'] = t_predicted
+    
+    # also add individual archetype temps for comparison
+    for i, arch_name in enumerate(archetype_names):
+        combined[f'{arch_name}_temp'] = aligned_archetype_temps[i]
+    
+    if combined.empty:
+        return
+    
+    # create output filename
+    label = f"{row['clean_address']}_period_intersection"
+    out_path = config.period_intersection_dir / f"{label}.png"
+    
+    # use plottingmanager to create period intersection plot
+    config.plotter.plot_period_intersection(
+        combined_data=combined,
+        address=row['address'],
+        archetypes=", ".join(archetype_names),
+        period_start=period_intersection_start,
+        period_end=period_intersection_end,
+        output_path=out_path
+    )
+    
+    logger.info(f"Created period intersection plot: {out_path.name}")
+
+
+# ============================================================
 # ANALYSIS FUNCTIONS
 # ============================================================
 
@@ -611,7 +914,8 @@ def process_mapping_row(row: pd.Series, analysis_type: str) -> Optional[Dict]:
 
     Args:
         row: Mapping DataFrame row
-        analysis_type: 'mse', 'period_intersection_means', or 'ac_noac_plots'
+        analysis_type: 'mse', 'period_intersection_means', 'ac_noac_plots', 'heat_events', 
+                      'heat_events_averaged', or 'period_intersection_plots'
     """
     # get archetype information from row
     arch = row.get("archtypes used")
@@ -628,6 +932,16 @@ def process_mapping_row(row: pd.Series, analysis_type: str) -> Optional[Dict]:
         hourly = pd.read_excel(hobo_file, index_col="timestamp")
         # ensure datetime index
         hourly.index = pd.to_datetime(hourly.index)
+
+        # handle heat events separately (no period intersection needed)
+        if analysis_type == 'heat_events':
+            plot_heat_events_for_row(row, hourly, arch)
+            return None
+        
+        # handle averaged heat events
+        if analysis_type == 'heat_events_averaged':
+            plot_averaged_heat_events_for_row(row, hourly, arch)
+            return None
 
         # get app usage period from mapping
         app_start = row.get("commheat start")
@@ -655,6 +969,9 @@ def process_mapping_row(row: pd.Series, analysis_type: str) -> Optional[Dict]:
         elif analysis_type == 'ac_noac_plots':
             plot_ac_noac_for_row(row, period_intersection_start, period_intersection_end, arch)
             return None
+        elif analysis_type == 'period_intersection_plots':
+            plot_period_intersection_for_row(row, hourly, period_intersection_start, period_intersection_end, arch)
+            return None
 
     except Exception as e:
         logger.error(f"Error processing {row['address']}: {e}", exc_info=True)
@@ -681,8 +998,12 @@ def compute_mse_for_row(row: pd.Series, hourly: pd.DataFrame, obs_start: pd.Time
     print(f"MSE CALCULATION FOR: {row['address']}")
     print(f"{'='*80}")
 
-    # process each archetype separately
-    for archetype in [a.strip() for a in arch.split(",")]:
+    # collect all archetype temperature series for averaging
+    archetype_series_list = []
+    archetypes = [a.strip() for a in arch.split(",")]
+
+    # load simulation data for all archetypes first
+    for archetype in archetypes:
         print(f"\nArchetype: {archetype}")
 
         # load simulation data for archetype
@@ -701,101 +1022,124 @@ def compute_mse_for_row(row: pd.Series, hourly: pd.DataFrame, obs_start: pd.Time
         # resample to ensure hourly frequency
         sim_df = sim_df.resample("h").mean()
 
-        # determine overlap window between hobo and simulation
-        actual_start = max(obs_start, sim_df.index.min())
-        actual_end = min(obs_end, sim_df.index.max())
+        archetype_series_list.append((archetype, sim_df))
 
-        # validate overlap window
-        if actual_start >= actual_end:
-            print(f"  ✗ Invalid time range for {archetype}")
-            continue
+    if not archetype_series_list:
+        print(f"  ✗ No simulation data found for any archetype")
+        return None
 
-        # create common hourly index
-        common_idx = pd.date_range(
-            start=pd.to_datetime(actual_start).floor("h"),
-            end=pd.to_datetime(actual_end).floor("h"),
-            freq="h"
-        )
+    # determine common overlap window across all archetypes
+    actual_start = max(obs_start, max(s[1].index.min() for s in archetype_series_list))
+    actual_end = min(obs_end, min(s[1].index.max() for s in archetype_series_list))
 
-        # align hobo and simulation data to common index
-        hobo_aligned = hobo_window.reindex(common_idx)
+    # validate overlap window
+    if actual_start >= actual_end:
+        print(f"  ✗ Invalid time range across archetypes")
+        return None
+
+    # create common hourly index
+    common_idx = pd.date_range(
+        start=pd.to_datetime(actual_start).floor("h"),
+        end=pd.to_datetime(actual_end).floor("h"),
+        freq="h"
+    )
+
+    # align hobo data to common index
+    hobo_aligned = hobo_window.reindex(common_idx)
+
+    # align all archetype series and collect for averaging
+    aligned_archetype_temps = []
+    for archetype, sim_df in archetype_series_list:
         sim_aligned = sim_df.reindex(common_idx)
+        aligned_archetype_temps.append(sim_aligned["archetype_internal_temperature"])
 
-        # join datasets and drop missing values
-        combined = hobo_aligned.join(sim_aligned, how="inner").dropna()
+    # calculate average predicted temperature across all archetypes at each timestep
+    if aligned_archetype_temps:
+        t_predicted_df = pd.concat(aligned_archetype_temps, axis=1)
+        t_predicted = t_predicted_df.mean(axis=1)
+    else:
+        print(f"  ✗ No aligned archetype data available")
+        return None
 
-        if combined.empty:
-            print(f"  ✗ No overlapping data for {archetype}")
-            print(f"    HOBO range: {hobo_window.index.min()} → {hobo_window.index.max()}")
-            print(f"    SIM  range: {sim_df.index.min()} → {sim_df.index.max()}")
-            continue
+    # combine hobo and predicted data
+    combined = hobo_aligned.join(pd.DataFrame({"T_predicted": t_predicted}), how="inner").dropna()
 
-        # calculate mean values for display
-        hobo_avg_mean = combined["actual_average_temperature"].mean()
-        hobo_max_mean = combined["actual_max_temperature"].mean()
-        sim_mean = combined["archetype_internal_temperature"].mean()
+    if combined.empty:
+        print(f"  ✗ No overlapping data after alignment")
+        return None
 
-        # task a) mse: hobologger_avg vs t_sim
-        mse_avg_sim = ((combined["archetype_internal_temperature"] - combined["actual_average_temperature"]) ** 2).mean()
+    # calculate mean values for display
+    hobo_avg_mean = combined["actual_average_temperature"].mean()
+    hobo_max_mean = combined["actual_max_temperature"].mean()
+    t_predicted_mean = combined["T_predicted"].mean()
 
-        # task b) mse: hobologger_max vs t_sim
-        mse_max_sim = ((combined["archetype_internal_temperature"] - combined["actual_max_temperature"]) ** 2).mean()
+    # number of valid hourly samples
+    n = len(combined)
 
-        # print comparison results
-        print(f"\n  Comparison 1: Hobologger_avg vs T_sim")
-        print(f"  Hourly Average Temps From Hobologger: {hobo_avg_mean:.3f} °C")
-        print(f"  Hourly Temps from EnergyPlus Simulation: {sim_mean:.3f} °C")
-        print(f"  Final Calculated MSE: {mse_avg_sim:.6f} C²")
+    # --- MSE: T_predicted vs actual_average_temperature ---
+    diff_avg = combined["T_predicted"] - combined["actual_average_temperature"]
+    mse_predicted_avg = (diff_avg.pow(2).sum()) / n
 
-        print(f"\n  Comparison 2: Hobologger_max vs T_sim")
-        print(f"  Hourly Average Temps From Hobologger: {hobo_max_mean:.3f} °C")
-        print(f"  Hourly Temps from EnergyPlus Simulation: {sim_mean:.3f} °C")
-        print(f"  Final Calculated MSE: {mse_max_sim:.6f} C²")
+    # --- MSE: T_predicted vs actual_max_temperature ---
+    diff_max = combined["T_predicted"] - combined["actual_max_temperature"]
+    mse_predicted_max = (diff_max.pow(2).sum()) / n
 
-        # create output label for files
-        label = f"{row['housetype']}_{row['clean_address']}"
+    # print comparison results
+    print(f"\n  Comparison 1: T_predicted (averaged across archetypes) vs actual_average_temperature")
+    print(f"  Actual Average Temperature (Hobologger): {hobo_avg_mean:.3f} °C")
+    print(f"  T_predicted (Averaged Archetypes): {t_predicted_mean:.3f} °C")
+    print(f"  Final Calculated MSE: {mse_predicted_avg:.6f} C²")
 
-        # save comparison data with clearer column names
-        comparison_data = combined.copy()
-        comparison_data = comparison_data.rename(columns={
-            "archetype_internal_temperature": "T_sim",
-            "actual_average_temperature": "Hobologger_avg",
-            "actual_max_temperature": "Hobologger_max"
-        })
-
-        # save comparison data to csv and excel
-        csv_path = config.comparison_dir / f"{label}_{archetype}_comparison.csv"
-        comparison_data.to_csv(csv_path)
-        comparison_data.to_excel(csv_path.with_suffix('.xlsx'))
-
-        # use plottingmanager to create comparison plot
-        config.plotter.plot_intersection_comparison(
-            combined_data=combined,
-            row_info={"address": row["address"]},
-            archetype=archetype,
-            mse_avg_sim=mse_avg_sim,
-            mse_max_sim=mse_max_sim,
-            actual_start=actual_start,
-            actual_end=actual_end,
-            output_label=label
-        )
-
-        # append results for this archetype
-        results.append({
-            "address": row["address"],
-            "archetype": archetype,
-            "period_intersection_start": actual_start,
-            "period_intersection_end": actual_end,
-            "period_intersection_hours": len(combined),
-            "period_app_usage_start": row.get("commheat start"),
-            "period_app_usage_end": row.get("commheat end"),
-            "mse_avg_vs_sim": mse_avg_sim,
-            "mse_max_vs_sim": mse_max_sim,
-            "csv_output": str(csv_path),
-            "xlsx_output": str(csv_path.with_suffix('.xlsx')),
-        })
-
+    print(f"\n  Comparison 2: T_predicted (averaged across archetypes) vs actual_max_temperature")
+    print(f"  Actual Max Temperature (Hobologger): {hobo_max_mean:.3f} °C")
+    print(f"  T_predicted (Averaged Archetypes): {t_predicted_mean:.3f} °C")
+    print(f"  Final Calculated MSE: {mse_predicted_max:.6f} C²")
+    
     print(f"\n{'='*80}\n")
+
+    # create output label for files
+    label = f"{row['housetype']}_{row['clean_address']}"
+
+    # save comparison data with clearer column names
+    comparison_data = combined.copy()
+    comparison_data = comparison_data.rename(columns={
+        "actual_average_temperature": "Hobologger_avg",
+        "actual_max_temperature": "Hobologger_max"
+    })
+
+    # save comparison data to excel in comparisons folder (no CSV)
+    xlsx_path = config.comparison_dir / f"{label}_averaged_comparison.xlsx"
+    comparison_data.to_excel(xlsx_path)
+
+    # NOW generate the plot and save to plots/averaged_comparisons folder
+    print(f"Generating plot for {row['address']}...")
+    png_path = config.averaged_comparisons_dir / f"{label}_averaged_comparison.png"
+    config.plotter.plot_intersection_comparison_averaged(
+        combined_data=combined,
+        row_info={"address": row["address"]},
+        archetypes=", ".join(archetypes),
+        mse_predicted_avg=mse_predicted_avg,
+        mse_predicted_max=mse_predicted_max,
+        actual_start=actual_start,
+        actual_end=actual_end,
+        output_path=png_path
+    )
+
+    # append results
+    results.append({
+        "address": row["address"],
+        "archetypes": ", ".join(archetypes),
+        "period_intersection_start": actual_start,
+        "period_intersection_end": actual_end,
+        "period_intersection_hours": len(combined),
+        "period_app_usage_start": row.get("commheat start"),
+        "period_app_usage_end": row.get("commheat end"),
+        "mse_predicted_vs_avg": mse_predicted_avg,
+        "mse_predicted_vs_max": mse_predicted_max,
+        "xlsx_output": str(xlsx_path),
+        "png_output": str(png_path),
+    })
+
     # return first result or none
     return results[0] if results else None
 
@@ -866,9 +1210,9 @@ def plot_ac_noac_for_row(row: pd.Series, period_intersection_start: pd.Timestamp
             logger.warning(f"Missing AC/No-AC data for {archetype}")
             continue
 
-        # create output filename
+        # create output filename in ac_noac subdirectory
         out_name = f"{row['clean_address']}_{archetype}_AC_NoAC_PERIOD_INTERSECTION.png"
-        out_path = config.plot_dir / out_name
+        out_path = config.ac_noac_dir / out_name
         
         # use plottingmanager to create ac vs noac plot
         config.plotter.plot_ac_vs_noac(ac, noac, f"{row['address']} - {archetype}", out_path)
@@ -899,7 +1243,7 @@ def run_analysis(mapping_df: pd.DataFrame, analysis_type: str, desc: str) -> Lis
 
 def main():
     """Main execution"""
-    logger.info(color_text("=== Starting CommHEAT Analysis ===\n", "96"))
+    logger.info(color_text("=== Starting CommHEAT Data Comparison ===\n", "96"))
 
     # load sensor mapping file
     mapping = load_mapping()
@@ -909,6 +1253,8 @@ def main():
                   if "sensor contact" not in f.name.lower() and not f.name.startswith("~$")]
 
     # process all hobo files
+    logger.info(color_text("\n=== Processing HOBO Sensor Data ===\n", "96"))
+    logger.info("Converting raw HOBO temperature data to hourly averages and saving processed files\n")
     summary = [res for f in tqdm(hobo_files, desc="Processing HOBO files")
                if (res := process_hobo_file(f, mapping))]
 
@@ -929,6 +1275,7 @@ def main():
 
     # run mse analysis
     logger.info(color_text("\n=== Computing MSE ===\n", "96"))
+    logger.info("Calculating Mean Squared Error between HOBO measurements and averaged archetype predictions for each address covering the period of intersection\n")
     mse_results = run_analysis(mapping, 'mse', "Computing MSE")
 
     # save mse results
@@ -936,8 +1283,9 @@ def main():
         pd.DataFrame(mse_results).to_excel(config.comparison_dir / "Intersection_MSE_Summary.xlsx", index=False)
 
     # run period intersection means analysis
-    logger.info(color_text("\n=== Computing Period_Intersection Means ===\n", "96"))
-    period_intersection_results = run_analysis(mapping, 'period_intersection_means', "Computing Period_Intersection Means")
+    logger.info(color_text("\n=== Computing Period Intersection Means ===\n", "96"))
+    logger.info("Calculating average temperatures during overlapping HOBO logger and app usage periods\n")
+    period_intersection_results = run_analysis(mapping, 'period_intersection_means', "Computing Period Intersection Means")
 
     # save period intersection results
     if period_intersection_results:
@@ -945,9 +1293,26 @@ def main():
 
     # generate ac vs no-ac plots
     logger.info(color_text("\n=== Plotting AC vs No-AC ===\n", "96"))
+    logger.info("Generating comparison plots between air-conditioned and non-air-conditioned scenarios\n")
     run_analysis(mapping, 'ac_noac_plots', "AC/No-AC Plots")
 
+    # generate heat event plots (individual archetypes)
+    logger.info(color_text("\n=== Plotting Heat Events (Individual Archetypes) ===\n", "96"))
+    logger.info("Creating separate plots for each archetype during heat events and baseline periods\n")
+    run_analysis(mapping, 'heat_events', "Heat Event Plots")
+    
+    # generate heat event plots (averaged archetypes)
+    logger.info(color_text("\n=== Plotting Heat Events (Averaged Archetypes) ===\n", "96"))
+    logger.info("Generating averaged archetype plots showing combined predictions for heat events\n")
+    run_analysis(mapping, 'heat_events_averaged', "Averaged Heat Event Plots")
+    
+    # generate period intersection plots
+    logger.info(color_text("\n=== Plotting Period Intersection ===\n", "96"))
+    logger.info("Creating full-period comparison plots for HOBO data vs averaged archetype predictions\n")
+    run_analysis(mapping, 'period_intersection_plots', "Period Intersection Plots")
+
     logger.info(color_text("\n=== DONE ===", "92"))
+
 
 
 if __name__ == "__main__":
