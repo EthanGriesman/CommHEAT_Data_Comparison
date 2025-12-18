@@ -152,14 +152,17 @@ class Config:
         self.heat_events_averaged_dir = self.plot_dir / "heat_events_averaged_archetypes"
         self.heat_events_averaged_dir.mkdir(exist_ok=True, parents=True)
         # create period intersection subdirectory
-        self.period_intersection_dir = self.plot_dir / "period_intersection"
+        self.period_intersection_dir = self.plot_dir / "period_intersection_no_archetypes"
         self.period_intersection_dir.mkdir(exist_ok=True, parents=True)
         # create ac/noac subdirectory
-        self.ac_noac_dir = self.plot_dir / "ac_noac"
+        self.ac_noac_dir = self.plot_dir / "ac_noac_period_intersection"
         self.ac_noac_dir.mkdir(exist_ok=True, parents=True)
         # create averaged comparisons subdirectory in plots
-        self.averaged_comparisons_dir = self.plot_dir / "averaged_comparisons"
-        self.averaged_comparisons_dir.mkdir(exist_ok=True, parents=True)
+        self.entire_pilot_period = self.plot_dir / "entire_pilot_period"
+        self.entire_pilot_period.mkdir(exist_ok=True, parents=True)
+        # create summary excel files directory
+        self.summary_dir = self.output_dir / "mse_statistics"
+        self.summary_dir.mkdir(exist_ok=True, parents=True)
 
         # set default target columns if not provided
         if self.target_columns is None:
@@ -248,7 +251,7 @@ def parse_date(date_str: any, target_year: Optional[int] = None, ep_format: bool
 
 def parse_energyplus_datetime(value: any, target_year: int) -> pd.Timestamp:
     """
-    OPTIMIZED: More robust EP datetime parser.
+    .: More robust EP datetime parser.
     Handles:
       - 'MM/DD HH:MM:SS' without year
       - '24:00:00' edge case by rolling to next day 00:00:00
@@ -316,7 +319,7 @@ def convert_to_celsius(series: pd.Series) -> pd.Series:
 
 @lru_cache(maxsize=128)
 def load_dataframe_cached(filepath_str: str, max_skiprows: int = 3) -> Optional[pd.DataFrame]:
-    """OPTIMIZED: Cached dataframe loader"""
+    """.: Cached dataframe loader"""
     return load_dataframe(Path(filepath_str), max_skiprows)
 
 
@@ -386,7 +389,7 @@ def find_column(df: pd.DataFrame, col_type: str) -> Optional[str]:
 # ============================================================
 
 def load_mapping() -> pd.DataFrame:
-    """OPTIMIZED: Load and process sensor mapping file"""
+    """Load and process sensor mapping file"""
     try:
         # load excel file with header on row 3
         df = pd.read_excel(config.mapping_file, header=2, engine='openpyxl')
@@ -400,12 +403,12 @@ def load_mapping() -> pd.DataFrame:
         # ensure sensor_id is string type
         df["sensor_id"] = df["sensor_id"].astype(str)
 
-        # OPTIMIZED: Vectorized operations instead of apply
+        # Vectorized operations instead of apply
         df["housetype"] = df["address"].str.contains("apt|apartment", case=False, regex=True).map({True: "Apt", False: "Ind"})
         df["clean_address"] = df["address"].str.replace(r"[^A-Za-z0-9]", "", regex=True)
         df["outfile"] = df["housetype"] + "_" + df["clean_address"] + ".xlsx"
 
-        # OPTIMIZED: Vectorized date parsing
+        # Vectorized date parsing
         for col in ["commheat start", "commheat end"]:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors='coerce')
@@ -478,7 +481,7 @@ def process_hobo_file(file_path: Path, mapping_df: pd.DataFrame) -> Optional[Dic
         return None
 
 
-@lru_cache(maxsize=256)  # OPTIMIZED: Increased cache size
+@lru_cache(maxsize=256)  # .: Increased cache size
 def load_simulation_cached(prefix: str, target_year: int, sim_dir_str: str) -> Optional[pd.DataFrame]:
     """Cached simulation loader"""
     # convert string path back to path object
@@ -508,7 +511,7 @@ def load_simulation(prefix: str, target_year: int = 2025, sim_dir: Path = None) 
         if not time_col:
             return None
 
-        # OPTIMIZED: Vectorized datetime parsing
+        # Vectorized datetime parsing
         df[time_col] = df[time_col].apply(lambda x: parse_energyplus_datetime(x, target_year))
         # set datetime as index and sort
         df = df.dropna(subset=[time_col]).set_index(time_col).sort_index()
@@ -523,7 +526,7 @@ def load_simulation(prefix: str, target_year: int = 2025, sim_dir: Path = None) 
         # rename to standard column name
         out.columns = ["archetype_internal_temperature"]
 
-        # OPTIMIZED: align timestamps to hobo hourly index
+        # align timestamps to hobo hourly index
         out.index = pd.DatetimeIndex(out.index).floor("h")
         # group by hour and average (using level=0 is faster)
         out = out.groupby(level=0).mean()
@@ -579,7 +582,7 @@ def load_archetype_series(
             # parse datetime and set as index
             df[time_col] = df[time_col].apply(lambda x: parse_energyplus_datetime(x, target_year))
             df = df.dropna(subset=[time_col]).set_index(time_col).sort_index()
-            # OPTIMIZED: floor timestamps to hour
+            # floor timestamps to hour
             df.index = pd.DatetimeIndex(df.index).floor("h")
             # group by hour and average
             df = df.groupby(level=0).mean()
@@ -666,7 +669,7 @@ def plot_heat_events_for_row(row: pd.Series, hourly: pd.DataFrame, arch: str) ->
         
         # process each archetype separately (existing logic)
         for archetype in [a.strip() for a in arch.split(",") if a.strip()]:
-            # OPTIMIZED: Use cached loader
+            # Use cached loader 
             sim_df = load_simulation_cached(archetype, 2025, str(config.latest_ep_dir))
             
             if sim_df is None or sim_df.empty:
@@ -692,26 +695,42 @@ def plot_heat_events_for_row(row: pd.Series, hourly: pd.DataFrame, arch: str) ->
             sim_aligned = sim_slice.reindex(common_idx)
             
             # combine datasets
-            combined = hobo_aligned.join(sim_aligned, how="outer")
+            combined = hobo_aligned.join(sim_aligned, how="outer").dropna()
             
             if combined.empty:
                 continue
+            
+            # Calculate MSE values
+            n = len(combined)
+            mse_avg = None
+            mse_max = None
+            
+            if n > 0:
+                # MSE: archetype_internal_temperature vs actual_average_temperature
+                diff_avg = combined["archetype_internal_temperature"] - combined["actual_average_temperature"]
+                mse_avg = (diff_avg.pow(2).sum()) / n
+                
+                # MSE: archetype_internal_temperature vs actual_max_temperature
+                diff_max = combined["archetype_internal_temperature"] - combined["actual_max_temperature"]
+                mse_max = (diff_max.pow(2).sum()) / n
             
             # create output filename
             label = f"{row['clean_address']}_{archetype}_{event_id}"
             out_path = config.heat_events_dir / f"{label}.png"
             
-            # use plottingmanager to create heat event plot
+            # use plottingmanager to create heat event plot with MSE
             config.plotter.plot_heat_event(
                 combined_data=combined,
                 address=row['address'],
                 archetype=archetype,
                 event_name=event_info['name'],
                 event_id=event_id,
-                output_path=out_path
+                output_path=out_path,
+                mse_avg=mse_avg,
+                mse_max=mse_max
             )
             
-            logger.info(f"Created heat event plot: {out_path.name}")
+            logger.info(f"Created heat event plot: {out_path.name} (MSE_avg={mse_avg:.4f}, MSE_max={mse_max:.4f})")
 
 
 def plot_averaged_heat_events_for_row(row: pd.Series, hourly: pd.DataFrame, arch: str) -> None:
@@ -737,7 +756,7 @@ def plot_averaged_heat_events_for_row(row: pd.Series, hourly: pd.DataFrame, arch
         archetype_names = []
         
         for archetype in archetypes:
-            # OPTIMIZED: Use cached loader
+            # .: Use cached loader
             sim_df = load_simulation_cached(archetype, 2025, str(config.latest_ep_dir))
             
             if sim_df is None or sim_df.empty:
@@ -792,24 +811,42 @@ def plot_averaged_heat_events_for_row(row: pd.Series, hourly: pd.DataFrame, arch
         for i, arch_name in enumerate(archetype_names):
             combined[f'{arch_name}_temp'] = aligned_archetype_temps[i]
         
+        combined = combined.dropna()
+        
         if combined.empty:
             continue
+        
+        # Calculate MSE values
+        n = len(combined)
+        mse_avg = None
+        mse_max = None
+        
+        if n > 0:
+            # MSE: T_predicted vs actual_average_temperature
+            diff_avg = combined["T_predicted"] - combined["actual_average_temperature"]
+            mse_avg = (diff_avg.pow(2).sum()) / n
+            
+            # MSE: T_predicted vs actual_max_temperature
+            diff_max = combined["T_predicted"] - combined["actual_max_temperature"]
+            mse_max = (diff_max.pow(2).sum()) / n
         
         # create output filename
         label = f"{row['clean_address']}_averaged_{event_id}"
         out_path = config.heat_events_averaged_dir / f"{label}.png"
         
-        # use plottingmanager to create averaged heat event plot
+        # use plottingmanager to create averaged heat event plot with MSE
         config.plotter.plot_heat_event_averaged(
             combined_data=combined,
             address=row['address'],
             archetypes=", ".join(archetype_names),
             event_name=event_info['name'],
             event_id=event_id,
-            output_path=out_path
+            output_path=out_path,
+            mse_avg=mse_avg,
+            mse_max=mse_max
         )
         
-        logger.info(f"Created averaged heat event plot: {out_path.name}")
+        logger.info(f"Created averaged heat event plot: {out_path.name} (MSE_avg={mse_avg:.4f}, MSE_max={mse_max:.4f})")
 
 
 def plot_period_intersection_for_row(row: pd.Series, hourly: pd.DataFrame, 
@@ -832,7 +869,7 @@ def plot_period_intersection_for_row(row: pd.Series, hourly: pd.DataFrame,
     archetype_names = []
     
     for archetype in archetypes:
-        # OPTIMIZED: Use cached loader
+        # Use cached loader
         sim_df = load_simulation_cached(archetype, 2025, str(config.latest_ep_dir))
         
         if sim_df is None or sim_df.empty:
@@ -982,13 +1019,13 @@ def process_mapping_row(row: pd.Series, analysis_type: str) -> Optional[Dict]:
 
 
 def compute_mse_for_row(row: pd.Series, hourly: pd.DataFrame, obs_start: pd.Timestamp, obs_end: pd.Timestamp, arch: str) -> Optional[Dict]:
-    """OPTIMIZED: Compute MSE between HOBO and simulation"""
+    """Compute MSE between HOBO and simulation for both AC and No-AC scenarios"""
     # extract observation window from hobo data
     hobo_window = hourly.loc[obs_start:obs_end].copy()
     if hobo_window.empty:
         return None
 
-    # OPTIMIZED: Single datetime operation
+    # .: Single datetime operation
     hobo_window.index = pd.DatetimeIndex(hobo_window.index).floor("h")
     # group by hour and average (level=0 is faster)
     hobo_window = hobo_window.groupby(level=0).mean()
@@ -1003,152 +1040,175 @@ def compute_mse_for_row(row: pd.Series, hourly: pd.DataFrame, obs_start: pd.Time
 
     # Pre-allocate lists
     archetypes = [a.strip() for a in arch.split(",")]
-    archetype_series_list = []
+    
+    # Process AC and No-AC separately
+    for scenario in ['AC', 'NoAC']:
+        print(f"\n{'='*80}")
+        print(f"SCENARIO: {scenario}")
+        print(f"{'='*80}")
+        
+        archetype_series_list = []
 
-    # load simulation data for all archetypes first
-    for archetype in archetypes:
-        print(f"\nArchetype: {archetype}")
+        # Define file patterns based on scenario
+        if scenario == 'AC':
+            patterns = lambda archetype: [f"{archetype}*ac_out*.xlsx", f"{archetype}*ac_out*.csv"]
+        else:
+            patterns = lambda archetype: [f"{archetype}*noac_out*.xlsx", f"{archetype}*noac_out*.csv"]
 
-        # OPTIMIZED: Use cached loader
-        sim_df = load_simulation_cached(archetype, hobo_window.index.min().year, str(config.latest_ep_dir))
+        # load simulation data for all archetypes first
+        for archetype in archetypes:
+            print(f"\nArchetype: {archetype} ({scenario})")
 
-        if sim_df is None or sim_df.empty:
-            print(f"  ✗ No simulation data found for {archetype}")
+            # Load specific AC or No-AC files
+            sim_series = load_archetype_series(
+                archetype,
+                hobo_window.index.min().year,
+                patterns(archetype),
+                obs_start,
+                obs_end
+            )
+
+            if sim_series is None or sim_series.empty:
+                print(f"  ✗ No {scenario} simulation data found for {archetype}")
+                continue
+
+            # Convert series to DataFrame with proper column name
+            sim_df = pd.DataFrame({
+                "archetype_internal_temperature": sim_series
+            })
+            
+            # Optimize datetime operations
+            sim_df.index = pd.DatetimeIndex(sim_df.index).floor("h")
+            sim_df = sim_df.groupby(level=0).mean()
+            sim_df = sim_df.resample("h").mean()
+
+            archetype_series_list.append((archetype, sim_df))
+
+        if not archetype_series_list:
+            print(f"  ✗ No {scenario} simulation data found for any archetype")
             continue
 
-        # prepare simulation data
-        sim_df = sim_df.copy()
-        # OPTIMIZED: Optimize datetime operations
-        sim_df.index = pd.DatetimeIndex(sim_df.index).floor("h")
-        sim_df = sim_df.groupby(level=0).mean()
-        sim_df = sim_df.resample("h").mean()
+        # determine common overlap window across all archetypes
+        actual_start = max(obs_start, max(s[1].index.min() for s in archetype_series_list))
+        actual_end = min(obs_end, min(s[1].index.max() for s in archetype_series_list))
 
-        archetype_series_list.append((archetype, sim_df))
+        # validate overlap window
+        if actual_start >= actual_end:
+            print(f"  ✗ Invalid time range across archetypes for {scenario}")
+            continue
 
-    if not archetype_series_list:
-        print(f"  ✗ No simulation data found for any archetype")
-        return None
+        # create common hourly index
+        common_idx = pd.date_range(
+            start=pd.to_datetime(actual_start).floor("h"),
+            end=pd.to_datetime(actual_end).floor("h"),
+            freq="h"
+        )
 
-    # determine common overlap window across all archetypes
-    actual_start = max(obs_start, max(s[1].index.min() for s in archetype_series_list))
-    actual_end = min(obs_end, min(s[1].index.max() for s in archetype_series_list))
+        # align hobo data to common index
+        hobo_aligned = hobo_window.reindex(common_idx)
 
-    # validate overlap window
-    if actual_start >= actual_end:
-        print(f"  ✗ Invalid time range across archetypes")
-        return None
+        # align all archetype series and collect for averaging
+        aligned_archetype_temps = []
+        for archetype, sim_df in archetype_series_list:
+            sim_aligned = sim_df.reindex(common_idx)
+            aligned_archetype_temps.append(sim_aligned["archetype_internal_temperature"])
 
-    # create common hourly index
-    common_idx = pd.date_range(
-        start=pd.to_datetime(actual_start).floor("h"),
-        end=pd.to_datetime(actual_end).floor("h"),
-        freq="h"
-    )
+        # calculate average predicted temperature across all archetypes at each timestep
+        if aligned_archetype_temps:
+            t_predicted_df = pd.concat(aligned_archetype_temps, axis=1)
+            t_predicted_df.columns = [arch for arch, _ in archetype_series_list]
+            t_predicted = t_predicted_df.mean(axis=1)
+        else:
+            print(f"  ✗ No aligned archetype data available for {scenario}")
+            continue
 
-    # align hobo data to common index
-    hobo_aligned = hobo_window.reindex(common_idx)
+        # combine hobo and predicted data
+        combined = hobo_aligned.join(pd.DataFrame({"T_predicted": t_predicted}), how="inner").dropna()
+        
+        # Add individual archetype temperatures to combined data for plotting
+        for i, (archetype, _) in enumerate(archetype_series_list):
+            combined[f'{archetype}_temp'] = aligned_archetype_temps[i]
 
-    # align all archetype series and collect for averaging
-    aligned_archetype_temps = []
-    for archetype, sim_df in archetype_series_list:
-        sim_aligned = sim_df.reindex(common_idx)
-        aligned_archetype_temps.append(sim_aligned["archetype_internal_temperature"])
+        if combined.empty:
+            print(f"  ✗ No overlapping data after alignment for {scenario}")
+            continue
 
-    # calculate average predicted temperature across all archetypes at each timestep
-    if aligned_archetype_temps:
-        t_predicted_df = pd.concat(aligned_archetype_temps, axis=1)
-        t_predicted_df.columns = [arch for arch, _ in archetype_series_list]
-        t_predicted = t_predicted_df.mean(axis=1)
-    else:
-        print(f"  ✗ No aligned archetype data available")
-        return None
+        # calculate mean values for display
+        hobo_avg_mean = combined["actual_average_temperature"].mean()
+        hobo_max_mean = combined["actual_max_temperature"].mean()
+        t_predicted_mean = combined["T_predicted"].mean()
 
-    # combine hobo and predicted data
-    combined = hobo_aligned.join(pd.DataFrame({"T_predicted": t_predicted}), how="inner").dropna()
-    
-    # Add individual archetype temperatures to combined data for plotting
-    for i, (archetype, _) in enumerate(archetype_series_list):
-        combined[f'{archetype}_temp'] = aligned_archetype_temps[i]
+        # number of valid hourly samples
+        n = len(combined)
 
-    if combined.empty:
-        print(f"  ✗ No overlapping data after alignment")
-        return None
+        # --- MSE: T_predicted vs actual_average_temperature ---
+        diff_avg = combined["T_predicted"] - combined["actual_average_temperature"]
+        mse_predicted_avg = (diff_avg.pow(2).sum()) / n
 
-    # calculate mean values for display
-    hobo_avg_mean = combined["actual_average_temperature"].mean()
-    hobo_max_mean = combined["actual_max_temperature"].mean()
-    t_predicted_mean = combined["T_predicted"].mean()
+        # --- MSE: T_predicted vs actual_max_temperature ---
+        diff_max = combined["T_predicted"] - combined["actual_max_temperature"]
+        mse_predicted_max = (diff_max.pow(2).sum()) / n
 
-    # number of valid hourly samples
-    n = len(combined)
+        # print comparison results
+        print(f"\n  Comparison 1: T_predicted (averaged across archetypes) vs actual_average_temperature")
+        print(f"  Actual Average Temperature (Hobologger): {hobo_avg_mean:.3f} °C")
+        print(f"  T_predicted (Averaged Archetypes): {t_predicted_mean:.3f} °C")
+        print(f"  Final Calculated MSE: {mse_predicted_avg:.6f}")
 
-    # --- MSE: T_predicted vs actual_average_temperature ---
-    diff_avg = combined["T_predicted"] - combined["actual_average_temperature"]
-    mse_predicted_avg = (diff_avg.pow(2).sum()) / n
+        print(f"\n  Comparison 2: T_predicted (averaged across archetypes) vs actual_max_temperature")
+        print(f"  Actual Max Temperature (Hobologger): {hobo_max_mean:.3f} °C")
+        print(f"  T_predicted (Averaged Archetypes): {t_predicted_mean:.3f} °C")
+        print(f"  Final Calculated MSE: {mse_predicted_max:.6f}")
+        
+        print(f"\n{'='*80}\n")
 
-    # --- MSE: T_predicted vs actual_max_temperature ---
-    diff_max = combined["T_predicted"] - combined["actual_max_temperature"]
-    mse_predicted_max = (diff_max.pow(2).sum()) / n
+        # create output label for files
+        label = f"{row['housetype']}_{row['clean_address']}_{scenario}"
 
-    # print comparison results
-    print(f"\n  Comparison 1: T_predicted (averaged across archetypes) vs actual_average_temperature")
-    print(f"  Actual Average Temperature (Hobologger): {hobo_avg_mean:.3f} °C")
-    print(f"  T_predicted (Averaged Archetypes): {t_predicted_mean:.3f} °C")
-    print(f"  Final Calculated MSE: {mse_predicted_avg:.6f}")
+        # save comparison data with clearer column names
+        comparison_data = combined.copy()
+        comparison_data = comparison_data.rename(columns={
+            "actual_average_temperature": "Hobologger_avg",
+            "actual_max_temperature": "Hobologger_max"
+        })
 
-    print(f"\n  Comparison 2: T_predicted (averaged across archetypes) vs actual_max_temperature")
-    print(f"  Actual Max Temperature (Hobologger): {hobo_max_mean:.3f} °C")
-    print(f"  T_predicted (Averaged Archetypes): {t_predicted_mean:.3f} °C")
-    print(f"  Final Calculated MSE: {mse_predicted_max:.6f}")
-    
-    print(f"\n{'='*80}\n")
+        # save comparison data to excel in comparisons folder
+        xlsx_path = config.comparison_dir / f"{label}_entire_pilot_period.xlsx"
+        comparison_data.to_excel(xlsx_path, engine='openpyxl')
 
-    # create output label for files
-    label = f"{row['housetype']}_{row['clean_address']}"
+        # generate the plot and save to plots/entire_pilot_period folder
+        # Only print message for the current scenario being plotted
+        print(f"Generating plot for {row['address']} ({scenario} scenario)...")
+        png_path = config.entire_pilot_period / f"{label}_entire_pilot_period.png"
+        config.plotter.plot_intersection_comparison_averaged(
+            combined_data=combined,
+            row_info={"address": f"{row['address']} ({scenario})"},
+            archetypes=", ".join([arch for arch, _ in archetype_series_list]),
+            mse_predicted_avg=mse_predicted_avg,
+            mse_predicted_max=mse_predicted_max,
+            actual_start=actual_start,
+            actual_end=actual_end,
+            output_path=png_path
+        )
 
-    # save comparison data with clearer column names
-    comparison_data = combined.copy()
-    comparison_data = comparison_data.rename(columns={
-        "actual_average_temperature": "Hobologger_avg",
-        "actual_max_temperature": "Hobologger_max"
-    })
+        # append results
+        results.append({
+            "address": row["address"],
+            "scenario": scenario,
+            "archetypes": ", ".join([arch for arch, _ in archetype_series_list]),
+            "period_intersection_start": actual_start,
+            "period_intersection_end": actual_end,
+            "period_intersection_hours": len(combined),
+            "period_app_usage_start": row.get("commheat start"),
+            "period_app_usage_end": row.get("commheat end"),
+            "mse_predicted_vs_avg": mse_predicted_avg,
+            "mse_predicted_vs_max": mse_predicted_max,
+            "xlsx_output": str(xlsx_path),
+            "png_output": str(png_path),
+        })
 
-    # save comparison data to excel in comparisons folder
-    xlsx_path = config.comparison_dir / f"{label}_averaged_comparison.xlsx"
-    comparison_data.to_excel(xlsx_path, engine='openpyxl')
-
-    # generate the plot and save to plots/averaged_comparisons folder
-    print(f"Generating plot for {row['address']}...")
-    png_path = config.averaged_comparisons_dir / f"{label}_averaged_comparison.png"
-    config.plotter.plot_intersection_comparison_averaged(
-        combined_data=combined,
-        row_info={"address": row["address"]},
-        archetypes=", ".join(archetypes),
-        mse_predicted_avg=mse_predicted_avg,
-        mse_predicted_max=mse_predicted_max,
-        actual_start=actual_start,
-        actual_end=actual_end,
-        output_path=png_path
-    )
-
-    # append results
-    results.append({
-        "address": row["address"],
-        "archetypes": ", ".join(archetypes),
-        "period_intersection_start": actual_start,
-        "period_intersection_end": actual_end,
-        "period_intersection_hours": len(combined),
-        "period_app_usage_start": row.get("commheat start"),
-        "period_app_usage_end": row.get("commheat end"),
-        "mse_predicted_vs_avg": mse_predicted_avg,
-        "mse_predicted_vs_max": mse_predicted_max,
-        "xlsx_output": str(xlsx_path),
-        "png_output": str(png_path),
-    })
-
-    # return first result or none
-    return results[0] if results else None
-
+    # return all results (both AC and NoAC)
+    return results if results else None
 
 def compute_period_intersection_means_for_row(row: pd.Series, hourly: pd.DataFrame, period_intersection_start: pd.Timestamp,
                                    period_intersection_end: pd.Timestamp, arch: str) -> Optional[Dict]:
@@ -1199,6 +1259,133 @@ def compute_period_intersection_means_for_row(row: pd.Series, hourly: pd.DataFra
         "archetypes": arch,
     }
 
+def compute_comprehensive_mse_for_row(row: pd.Series, hourly: pd.DataFrame, obs_start: pd.Timestamp, obs_end: pd.Timestamp, arch: str) -> Optional[Dict]:
+    """Compute comprehensive MSE comparisons for AC and No-AC scenarios against both max and actual temperatures"""
+    # extract observation window from hobo data
+    hobo_window = hourly.loc[obs_start:obs_end].copy()
+    if hobo_window.empty:
+        return None
+
+    # floor datetime to hour and group
+    hobo_window.index = pd.DatetimeIndex(hobo_window.index).floor("h")
+    hobo_window = hobo_window.groupby(level=0).mean()
+
+    # collect results for this address
+    mse_comparison_data = {
+        "address": row["address"],
+        "housetype": row["housetype"],
+        "archetypes": arch,
+        "period_start": obs_start,
+        "period_end": obs_end,
+    }
+
+    archetypes = [a.strip() for a in arch.split(",")]
+    
+    # Process AC and No-AC scenarios
+    for scenario in ['AC', 'NoAC']:
+        archetype_series_list = []
+
+        # Define file patterns based on scenario
+        if scenario == 'AC':
+            patterns = lambda archetype: [f"{archetype}*ac_out*.xlsx", f"{archetype}*ac_out*.csv"]
+        else:
+            patterns = lambda archetype: [f"{archetype}*noac_out*.xlsx", f"{archetype}*noac_out*.csv"]
+
+        # Load simulation data for all archetypes
+        for archetype in archetypes:
+            sim_series = load_archetype_series(
+                archetype,
+                hobo_window.index.min().year,
+                patterns(archetype),
+                obs_start,
+                obs_end
+            )
+
+            if sim_series is None or sim_series.empty:
+                continue
+
+            # Convert series to DataFrame
+            sim_df = pd.DataFrame({
+                "archetype_internal_temperature": sim_series
+            })
+            
+            sim_df.index = pd.DatetimeIndex(sim_df.index).floor("h")
+            sim_df = sim_df.groupby(level=0).mean()
+            sim_df = sim_df.resample("h").mean()
+
+            archetype_series_list.append((archetype, sim_df))
+
+        if not archetype_series_list:
+            continue
+
+        # Determine common overlap window
+        actual_start = max(obs_start, max(s[1].index.min() for s in archetype_series_list))
+        actual_end = min(obs_end, min(s[1].index.max() for s in archetype_series_list))
+
+        if actual_start >= actual_end:
+            continue
+
+        # Create common hourly index
+        common_idx = pd.date_range(
+            start=pd.to_datetime(actual_start).floor("h"),
+            end=pd.to_datetime(actual_end).floor("h"),
+            freq="h"
+        )
+
+        # Align hobo data
+        hobo_aligned = hobo_window.reindex(common_idx)
+
+        # Align archetype series and average
+        aligned_archetype_temps = []
+        for archetype, sim_df in archetype_series_list:
+            sim_aligned = sim_df.reindex(common_idx)
+            aligned_archetype_temps.append(sim_aligned["archetype_internal_temperature"])
+
+        if aligned_archetype_temps:
+            t_predicted_df = pd.concat(aligned_archetype_temps, axis=1)
+            t_predicted_df.columns = [arch for arch, _ in archetype_series_list]
+            t_predicted = t_predicted_df.mean(axis=1)
+        else:
+            continue
+
+        # Combine hobo and predicted data
+        combined = hobo_aligned.join(pd.DataFrame({"T_predicted": t_predicted}), how="inner").dropna()
+
+        if combined.empty:
+            continue
+
+        n = len(combined)
+
+        # Calculate MSE: T_predicted vs actual_average_temperature
+        diff_avg = combined["T_predicted"] - combined["actual_average_temperature"]
+        mse_vs_avg = (diff_avg.pow(2).sum()) / n
+
+        # Calculate MSE: T_predicted vs actual_max_temperature
+        diff_max = combined["T_predicted"] - combined["actual_max_temperature"]
+        mse_vs_max = (diff_max.pow(2).sum()) / n
+
+        # Store results with clear naming
+        prefix = scenario.lower()
+        mse_comparison_data[f"{prefix}_mse_vs_actual_avg"] = mse_vs_avg
+        mse_comparison_data[f"{prefix}_mse_vs_actual_max"] = mse_vs_max
+        mse_comparison_data[f"{prefix}_mean_temp"] = combined["T_predicted"].mean()
+        mse_comparison_data[f"{prefix}_n_hours"] = n
+
+    # Calculate additional comparison metrics if both scenarios exist
+    if "ac_mse_vs_actual_avg" in mse_comparison_data and "noac_mse_vs_actual_avg" in mse_comparison_data:
+        # MSE difference comparisons
+        mse_comparison_data["mse_diff_ac_vs_noac_avg"] = (
+            mse_comparison_data["ac_mse_vs_actual_avg"] - mse_comparison_data["noac_mse_vs_actual_avg"]
+        )
+        mse_comparison_data["mse_diff_ac_vs_noac_max"] = (
+            mse_comparison_data["ac_mse_vs_actual_max"] - mse_comparison_data["noac_mse_vs_actual_max"]
+        )
+        
+        # Add mean values for reference
+        mse_comparison_data["actual_avg_mean"] = hobo_aligned["actual_average_temperature"].mean()
+        mse_comparison_data["actual_max_mean"] = hobo_aligned["actual_max_temperature"].mean()
+
+    return mse_comparison_data if len(mse_comparison_data) > 5 else None
 
 def plot_ac_noac_for_row(row: pd.Series, period_intersection_start: pd.Timestamp, period_intersection_end: pd.Timestamp, arch: str) -> None:
     """Generate AC vs No-AC plots"""
@@ -1225,7 +1412,7 @@ def plot_ac_noac_for_row(row: pd.Series, period_intersection_start: pd.Timestamp
 
 
 def run_analysis(mapping_df: pd.DataFrame, analysis_type: str, desc: str) -> List[Dict]:
-    """OPTIMIZED: Run analysis across all mapping rows using threading for I/O-bound operations"""
+    """.: Run analysis across all mapping rows using threading for I/O-bound operations"""
     results = []
     
     # Use ThreadPoolExecutor for I/O-bound plotting operations
@@ -1251,6 +1438,7 @@ def run_analysis(mapping_df: pd.DataFrame, analysis_type: str, desc: str) -> Lis
             try:
                 result = future.result()
                 if result:
+                    # Handle both single dict and list of dicts
                     if isinstance(result, list):
                         results.extend(result)
                     else:
@@ -1260,13 +1448,12 @@ def run_analysis(mapping_df: pd.DataFrame, analysis_type: str, desc: str) -> Lis
     
     return results
 
-
 # ============================================================
 # MAIN
 # ============================================================
 
 def main():
-    """OPTIMIZED: Main execution with parallel processing"""
+    """.: Main execution with parallel processing"""
     logger.info(color_text("=== Starting CommHEAT Data Comparison ===\n", "96"))
 
     # load sensor mapping file
@@ -1276,9 +1463,9 @@ def main():
     hobo_files = [f for f in config.hobo_dir.glob("*.xlsx")
                   if "sensor contact" not in f.name.lower() and not f.name.startswith("~$")]
 
-    # OPTIMIZED: Parallel HOBO processing
-    logger.info(color_text("\n=== Processing HOBO Sensor Data ===\n", "96"))
-    logger.info("Converting raw HOBO temperature data to hourly averages and saving processed files\n")
+    # .: Parallel HOBO processing
+    logger.info(color_text("\n=== Processing HOBO Sensor Data ===\n", "92"))
+    logger.info(color_text("\n== Converting raw HOBO temperature data to hourly averages and saving processed files ==\n", "96"))
     
     max_workers = max(1, multiprocessing.cpu_count() - 1)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -1292,7 +1479,7 @@ def main():
         save_path = config.output_dir / "HoboHouseIndex.xlsx"
 
         try:
-            # save to excel with optimized engine
+            # save to excel with . engine
             df.to_excel(save_path, index=False, engine='openpyxl')
             logger.info(f"Saved HOBO index to: {save_path}")
         except PermissionError:
@@ -1302,49 +1489,101 @@ def main():
             logger.info(f"Saved backup: {backup}")
 
     # run mse analysis (CPU-bound, will use ProcessPoolExecutor)
-    logger.info(color_text("\n=== Computing MSE ===\n", "96"))
-    logger.info("Comparison between HOBO data and averaged archetype predictions for each address in period of intersection\n")
+    logger.info(color_text("\n=== Computing MSE ===\n", "92"))
+    logger.info(color_text("\n== Comparison between HOBO data and averaged archetype predictions for each address in period of intersection ==\n", "96"))
     mse_results = run_analysis(mapping, 'mse', "Computing MSE")
 
     # save mse results
     if mse_results:
         pd.DataFrame(mse_results).to_excel(
-            config.comparison_dir / "Intersection_MSE_Summary.xlsx", 
+            config.summary_dir / "Intersection_MSE_Summary.xlsx", 
             index=False, 
             engine='openpyxl'
         )
 
+    # NEW: Run comprehensive MSE comparison analysis
+    logger.info(color_text("\n=== Computing Comprehensive MSE Comparisons ===\n", "92"))
+    logger.info(color_text("\n== Comparing AC and NoAC MSE against actual_avg and actual_max temperatures for each address ==\n", "96"))
+    
+    comprehensive_mse_results = []
+    for idx, row in tqdm(mapping.iterrows(), total=len(mapping), desc="Computing Comprehensive MSE"):
+        # Get archetype information
+        arch = row.get("archtypes used")
+        if not isinstance(arch, str):
+            continue
+
+        # Check if processed hobo file exists
+        hobo_file = config.hobo_output_dir / row["outfile"]
+        if not hobo_file.exists():
+            continue
+
+        try:
+            # Load processed hobo data
+            hourly = pd.read_excel(hobo_file, index_col="timestamp", engine='openpyxl')
+            hourly.index = pd.to_datetime(hourly.index)
+
+            # Get app usage period
+            app_start = row.get("commheat start")
+            app_end = row.get("commheat end")
+
+            if pd.isna(app_start) or pd.isna(app_end):
+                continue
+
+            # Calculate intersection period
+            period_intersection_start = max(hourly.index.min(), app_start)
+            period_intersection_end = min(hourly.index.max(), app_end)
+
+            # Validate intersection period
+            is_valid, msg = validate_period_intersection(period_intersection_start, period_intersection_end)
+            if not is_valid:
+                continue
+
+            # Compute comprehensive MSE
+            result = compute_comprehensive_mse_for_row(row, hourly, period_intersection_start, period_intersection_end, arch)
+            if result:
+                comprehensive_mse_results.append(result)
+
+        except Exception as e:
+            logger.error(f"Error processing {row['address']}: {e}", exc_info=True)
+
+    # Save comprehensive MSE results
+    if comprehensive_mse_results:
+        comprehensive_df = pd.DataFrame(comprehensive_mse_results)
+        save_path = config.summary_dir / "Comprehensive_MSE_Comparison.xlsx"
+        comprehensive_df.to_excel(save_path, index=False, engine='openpyxl')
+        logger.info(f"Saved comprehensive MSE comparison to: {save_path}")
+
     # run period intersection means analysis
-    logger.info(color_text("\n=== Computing Period Intersection Means ===\n", "96"))
-    logger.info("Calculating average temperatures during overlapping HOBO logger and app usage periods\n")
+    logger.info(color_text("\n=== Computing Period Intersection Means ===\n", "92"))
+    logger.info(color_text("\n== Calculating average temperatures during overlapping HOBO logger and app usage periods ==\n", "96"))
     period_intersection_results = run_analysis(mapping, 'period_intersection_means', "Computing Period Intersection Means")
 
     # save period intersection results
     if period_intersection_results:
         pd.DataFrame(period_intersection_results).to_excel(
-            config.output_dir / "Period_Intersection_Mean_Summary.xlsx", 
+            config.summary_dir / "Period_Intersection_Mean_Summary.xlsx", 
             index=False, 
             engine='openpyxl'
         )
 
     # generate ac vs no-ac plots (I/O-bound, will use ThreadPoolExecutor)
-    logger.info(color_text("\n=== Plotting AC vs No-AC ===\n", "96"))
-    logger.info("Generating comparison plots between air-conditioned and non-air-conditioned scenarios\n")
+    logger.info(color_text("\n=== Plotting AC vs No-AC ===\n", "92"))
+    logger.info(color_text("\n== Generating comparison plots between air-conditioned and non-air-conditioned scenarios ==\n", "96"))
     run_analysis(mapping, 'ac_noac_plots', "AC/No-AC Plots")
 
     # generate heat event plots (individual archetypes)
-    logger.info(color_text("\n=== Plotting Heat Events (Individual Archetypes) ===\n", "96"))
-    logger.info("Creating separate plots for each archetype during heat events and baseline periods\n")
+    logger.info(color_text("\n=== Plotting Heat Events (Individual Archetypes) ===\n", "92"))
+    logger.info(color_text("\n== Creating separate plots for each archetype during heat events and baseline periods ==\n", "96"))
     run_analysis(mapping, 'heat_events', "Heat Event Plots")
     
     # generate heat event plots (averaged archetypes)
     logger.info(color_text("\n=== Plotting Heat Events (Averaged Archetypes) ===\n", "96"))
-    logger.info("Generating averaged archetype plots showing combined predictions for heat events\n")
+    logger.info(color_text("\n== Generating averaged archetype plots showing combined predictions for heat events ==\n", "96"))
     run_analysis(mapping, 'heat_events_averaged', "Averaged Heat Event Plots")
     
     # generate period intersection plots
     logger.info(color_text("\n=== Plotting Period Intersection ===\n", "96"))
-    logger.info("Creating full-period comparison plots for HOBO data vs averaged archetype predictions\n")
+    logger.info(color_text("\n== Creating full-period comparison plots for HOBO data vs averaged archetype predictions ==\n", "96"))
     run_analysis(mapping, 'period_intersection_plots', "Period Intersection Plots")
 
     logger.info(color_text("\n=== DONE ===", "92"))
