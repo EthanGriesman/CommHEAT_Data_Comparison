@@ -1,34 +1,19 @@
 # CommHEAT_Data_Comparison
 
-This repository contains an optimized, production-ready data analysis pipeline for the CommHEAT project.
-The pipeline processes HOBO temperature sensor data, compares it against EnergyPlus simulation outputs, and generates:
+This repository contains an optimized, production-ready data analysis pipeline developed for the CommHEAT project. The pipeline processes indoor temperature data collected from HOBO sensors, compares those observations against EnergyPlus simulation outputs, and generates a comprehensive set of comparison plots, error metrics, and summary statistics. The codebase is designed to support research-scale analysis with an emphasis on performance, reproducibility, and clarity.
 
-hourly aggregated datasets
+The pipeline performs end-to-end processing of raw HOBO sensor files by converting temperature measurements to Celsius, resampling observations to hourly resolution, and computing hourly mean and maximum temperatures. Cleaned and aggregated outputs are written to Excel files for each sensor, along with a master index file that links sensors to addresses, housing types, logging periods, and archetypes used. These outputs form the foundation for all downstream analyses.
 
-mean squared error (MSE) metrics
+EnergyPlus simulation data are loaded dynamically using a centralized data loading system that automatically detects relevant time and temperature columns. The pipeline handles EnergyPlus-specific datetime formats, including the 24:00:00 edge case, and resamples all simulation outputs to hourly resolution. To improve performance, simulation results are cached globally by archetype and year, ensuring that each archetype is only loaded once even when reused across multiple houses, analyses, or heat events.
 
-AC vs No-AC comparisons
+A core feature of the pipeline is its ability to identify and validate period intersections between HOBO logging windows and CommHEAT app usage periods. These intersections define the valid time ranges over which sensor observations and simulation predictions are compared. The pipeline enforces minimum duration requirements, aligns timestamps to a common hourly index, and gracefully skips invalid or insufficient intersections while logging informative warnings.
 
-heat event plots
+Multiple analysis modes are supported within a single unified framework. The pipeline computes mean squared error metrics between observed HOBO temperatures and averaged archetype predictions, generates comprehensive AC versus No-AC MSE comparisons, calculates period intersection mean temperatures, and produces AC versus No-AC comparison plots for individual archetypes. In addition, the pipeline supports batch processing of predefined extreme heat events, generating both individual archetype plots and averaged archetype comparison figures for each event.
 
-period-intersection summaries
+All analyses are executed using parallel processing where appropriate. IO-bound tasks, such as file loading and plot generation, are parallelized using higher thread counts, while CPU-bound operations scale with available processor cores. NumPy-based vectorized calculations are used throughout to minimize overhead and ensure efficient computation, even for large datasets.
 
-publication-ready figures and Excel outputs
+Plot generation is fully modular and handled by a dedicated plotting manager, which produces consistent, publication-ready figures. Output artifacts include Excel spreadsheets summarizing results, time-aligned comparison datasets, and PNG figures for heat events, AC versus No-AC scenarios, and full-period intersections. All outputs are written to a structured directory hierarchy defined in the configuration file.
 
-The pipeline is designed for performance, scalability, and reproducibility, using vectorized operations, caching, and parallel execution.
+The pipeline is configured and executed through a single entry point, starting1.py, and requires no command-line arguments. All paths, column definitions, plotting styles, regex patterns, and heat event definitions are centralized in config.py, allowing the pipeline to be adapted to new datasets or project phases by modifying configuration values rather than analysis logic.
 
-Key Features
-
-vectorized pandas and NumPy operations for speed
-
-centralized file I/O via a reusable DataLoader
-
-global caching of archetype simulations to avoid redundant loads
-
-automatic handling of EnergyPlus datetime edge cases (e.g. 24:00:00)
-
-parallel execution using ThreadPoolExecutor
-
-modular plotting via PlottingManager
-
-consistent output structure for downstream analysis
+This codebase prioritizes transparency, robustness, and long-term maintainability. Errors are handled gracefully, missing data are skipped without interrupting execution, and detailed logging is provided throughout the workflow. The structure and documentation are intentionally verbose to support collaborative research, reproducibility, and future extension of the CommHEAT analysis framework.
