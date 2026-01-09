@@ -67,7 +67,6 @@ Handles all file input/output operations, including:
 - Column name normalization
 - Intelligent column discovery using multiple heuristics
 - Data validation
-- LRU caching for performance optimization
 
 ---
 
