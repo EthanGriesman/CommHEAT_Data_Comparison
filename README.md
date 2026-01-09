@@ -18,10 +18,6 @@ pip install pandas numpy matplotlib openpyxl tqdm
 The pipeline is organized as a modular data processing system designed for high performance through optimized file I/O, intelligent caching, and parallel execution of tasks in the process of generating analyses and plots of temperature comparisons.
 
 ---
-
-## Module Structure
-The pipeline consists of four interconnected modules:
-
 ### `starting1.py`
 Main orchestrator responsible for coordinating all pipeline operations and managing parallel processing workflows.
 
@@ -31,7 +27,7 @@ Main orchestrator responsible for coordinating all pipeline operations and manag
 Central configuration hub that defines:
 - Directory paths
 - Logging setup
-- Regex patterns for sensor ID extraction
+- Patterns for sensor ID extraction
 - Plot styling
 - Heat event definitions
 
