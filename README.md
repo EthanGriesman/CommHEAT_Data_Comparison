@@ -12,7 +12,7 @@ To start, ensure you have the latest version of Python installed on your machine
 python --version
 ```
 
-Once complete, install the following Pdependency:
+Once complete, install the following dependency:
 
 ```bash
 pip install pandas numpy matplotlib openpyxl tqdm
