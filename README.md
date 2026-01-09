@@ -1,4 +1,4 @@
-Overview
+##**Overview**
 
 The CommHEAT Data Analysis Pipeline processes HOBO temperature sensor data, compares it with EnergyPlus building simulation outputs, and generates statistical analyses and visualizations. This system validates building energy models by comparing simulated indoor temperatures against measured temperatures in residential buildings during summer 2025 heat events.
 
