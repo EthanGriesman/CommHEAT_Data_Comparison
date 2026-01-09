@@ -12,6 +12,7 @@ Install the required Python dependencies:
 
 ```bash
 pip install pandas numpy matplotlib openpyxl tqdm
+```
 
 # CommHEAT Data Analysis Pipeline
 
