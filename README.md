@@ -6,7 +6,7 @@ The **CommHEAT Data Analysis Pipeline** processes HOBO temperature sensor data, 
 ---
 
 ## Installation
-To start, install the following Python dependency:
+To start, ensure you have the latest version of Python installed on your machine. Once complete, install the following Python dependency:
 
 ```bash
 pip install pandas numpy matplotlib openpyxl tqdm
