@@ -18,7 +18,7 @@ Once complete, install the following Pdependency:
 pip install pandas numpy matplotlib openpyxl tqdm
 ```
 
-Open `config.py` and update the directory paths so they match your local file structure.
+Before running the script as described below inOpen `config.py` and update the directory paths so they match your local file structure.
 
 ```python
 # Directory paths for input data
@@ -83,20 +83,20 @@ Manages all visualizations with consistent styling. Supports five plot types:
 
 ## Processing Workflow
 
-## Useage
+## 1.0 Useage
 The following command begins the entire pipeline
 
 ```bash
 python starting1.py
 ```
 
-### 1. Initialization
+### 1.1 Initialization
 - Loads configuration settings
 - Creates output directories
 - Initializes the `PlottingManager` and `DataLoader`
 - Sets up UTF-8 logging for Windows compatibility
 
-### 2. Sensor Mapping
+### 1.2 Sensor Mapping
 - Loads the Excel mapping file linking:
   - Sensor IDs
   - Addresses
@@ -109,7 +109,7 @@ python starting1.py
 
 ---
 
-### 3. HOBO Data Processing (Parallel)
+### 1.3 HOBO Data Processing (Parallel)
 - Scans for sensor Excel files
 - Extracts sensor IDs using regex patterns
 - Loads raw data with automatic header detection
@@ -120,7 +120,7 @@ python starting1.py
 
 ---
 
-### 4. Archetype Preloading
+### 1.4 Archetype Preloading
 - Extracts unique archetype names from the mapping file
 - Loads all EnergyPlus simulation files into memory
 - Parses EnergyPlus datetime format (including 24:00:00 edge-case handling)
@@ -129,7 +129,7 @@ python starting1.py
 
 This approach eliminates redundant file I/O during downstream analysis.
 
-## 5. Clearing Output
+## 1.5 Clearing Output
 To avoid manually having to delete output after each time the script is run, use the following command
 
 ```bash
@@ -139,7 +139,7 @@ python clear_output.py
 
 ---
 
-### 5. MSE Analysis
+### 1.6 MSE Analysis
 - Computes Mean Squared Error (MSE) for AC and no-AC scenarios
 - Determines period intersection between sensor measurement periods and CommHEAT usage dates
 - Aligns simulated and measured data to a common time index
@@ -149,7 +149,7 @@ python clear_output.py
 
 ---
 
-### 6. Comprehensive MSE Comparison
+### 1.6 Comprehensive MSE Comparison
 - Generates a simplified summary comparing AC versus no-AC model accuracy
 - Output includes:
   - Address
@@ -160,7 +160,7 @@ python clear_output.py
 
 ---
 
-### 7. Heat Event Analysis (Batch)
+### 1.7 Heat Event Analysis (Batch)
 - Processes predefined heat events (H1, H2, H3) and baseline periods (B1, B2)
 - Loads archetype data once per address
 - Generates:
@@ -170,7 +170,7 @@ python clear_output.py
 
 ---
 
-### 8. AC vs No-AC Comparison
+### 1.8 AC vs No-AC Comparison
 - Directly compares AC and no-AC simulation variants
 - Calculates:
   - Mean temperature differences
@@ -179,7 +179,7 @@ python clear_output.py
 
 ---
 
-### 9. Period Intersection Visualization
+### 1.9 Period Intersection Visualization
 - Creates full pilot-period plots showing:
   - Averaged EnergyPlus predictions
   - HOBO sensor measurements
