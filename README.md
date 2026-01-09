@@ -18,7 +18,7 @@ Once complete, install the following Pdependency:
 pip install pandas numpy matplotlib openpyxl tqdm
 ```
 
-Before running the script as described below inOpen `config.py` and update the directory paths so they match your local file structure.
+Before running the script as described below in section 1.0, download and then open `config.py` and update the directory paths so they match your local file structure.
 
 ```python
 # Directory paths for input data
