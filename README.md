@@ -1,7 +1,12 @@
-This repository contains an optimized data analysis pipeline developed for the CommHEAT project. The pipeline processes indoor temperature data from HOBO sensors, compares observed temperatures with EnergyPlus simulation outputs, and generates error metrics, comparison plots, and summary tables. It is designed for research-scale analysis with a focus on performance, reproducibility, and clear data provenance.
+Overview
 
-Raw HOBO sensor files are cleaned, converted to Celsius, and resampled to hourly resolution to produce hourly mean and maximum temperature datasets. These processed outputs are written to Excel files and indexed for downstream analysis. EnergyPlus simulation data are loaded through a centralized data loader that automatically detects time and temperature columns, handles EnergyPlus-specific datetime formats, and resamples results to hourly resolution. Simulation outputs are cached by archetype to avoid redundant file reads and improve performance.
+The CommHEAT Data Analysis Pipeline processes HOBO temperature sensor data, compares it with EnergyPlus building simulation outputs, and generates statistical analyses and visualizations. This system validates building energy models by comparing simulated indoor temperatures against measured temperatures in residential buildings during summer 2025 heat events.
 
-The pipeline identifies valid time intersections between HOBO logging periods and CommHEAT app usage windows and uses these intersections to align sensor observations with simulation predictions. Within these periods, the pipeline computes mean squared error metrics, generates AC versus No-AC comparisons, and produces averaged archetype predictions. It also supports batch processing of predefined extreme heat events, producing both individual and averaged comparison plots.
+Installation
 
-Execution is fully automated through a single entry script and uses parallel processing where appropriate to efficiently handle large datasets. All configuration settings, directory paths, column definitions, plotting styles, and heat event definitions are centralized in a configuration module, allowing the pipeline to be easily adapted to new datasets or analysis scenarios. Outputs are written as structured Excel files and publication-ready figures suitable for reporting and further analysis.
+pip install pandas numpy matplotlib openpyxl tqdm
+
+Basic Usage
+
+cd "C:\Users\Ethan\OneDrive - Iowa State University\Desktop\CommHEAT Comparison"
+python starting1.py
