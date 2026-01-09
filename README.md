@@ -14,6 +14,13 @@ Install the required Python dependencies:
 pip install pandas numpy matplotlib openpyxl tqdm
 ```
 
+## Useage
+The following command runs the entire pipeline
+
+```bash
+python starting1.py
+```
+
 # CommHEAT Data Analysis Pipeline
 
 ## System Architecture
