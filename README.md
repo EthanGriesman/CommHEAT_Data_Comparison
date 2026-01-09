@@ -57,18 +57,18 @@ Manages all visualizations with consistent styling. Supports five plot types:
 
 ## Processing Workflow
 
-### 1. Initialization
-- Loads configuration settings
-- Creates output directories
-- Initializes the `PlottingManager` and `DataLoader`
-- Sets up UTF-8 logging for Windows compatibility
-
 ## Useage
 The following command begins the entire pipeline
 
 ```bash
 python starting1.py
 ```
+
+### 1. Initialization
+- Loads configuration settings
+- Creates output directories
+- Initializes the `PlottingManager` and `DataLoader`
+- Sets up UTF-8 logging for Windows compatibility
 
 ### 2. Sensor Mapping
 - Loads the Excel mapping file linking:
@@ -102,6 +102,14 @@ python starting1.py
 - Stores results in a global cache using composite keys
 
 This approach eliminates redundant file I/O during downstream analysis.
+
+## 5. Clearing Output
+To avoid manually having to delete output after each time the script is run, use the following command
+
+```bash
+python clear_output.py
+```
+
 
 ---
 
