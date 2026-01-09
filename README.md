@@ -14,13 +14,6 @@ Install the required Python dependencies:
 pip install pandas numpy matplotlib openpyxl tqdm
 ```
 
-## Useage
-The following command runs the entire pipeline
-
-```bash
-python starting1.py
-```
-
 # CommHEAT Data Analysis Pipeline
 
 ## System Architecture
@@ -76,7 +69,12 @@ Manages all visualizations with consistent styling. Supports five plot types:
 - Initializes the `PlottingManager` and `DataLoader`
 - Sets up UTF-8 logging for Windows compatibility
 
----
+## Useage
+The following command runs the entire pipeline
+
+```bash
+python starting1.py
+```
 
 ### 2. Sensor Mapping
 - Loads the Excel mapping file linking:
