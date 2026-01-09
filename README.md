@@ -15,7 +15,7 @@ pip install pandas numpy matplotlib openpyxl tqdm
 # CommHEAT Data Analysis Pipeline
 
 ## System Architecture
-The pipeline is organized as a **modular, platform-agnostic data processing system** designed for high performance through optimized file I/O, intelligent caching, and parallel execution.
+The pipeline is organized as a modular data processing system designed for high performance through optimized file I/O, intelligent caching, and parallel execution of tasks in the process of generating analyses and plots of temperature comparisons.
 
 ---
 
