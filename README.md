@@ -19,8 +19,11 @@ python starting1.py
 The pipeline uses four interconnected modules:
 
 starting1.py - Main orchestrator that coordinates all operations and manages parallel processing workflows.
+
 config.py - Configuration hub that defines directory paths, logging setup, regex patterns for data extraction, plot styling, and heat event definitions. Automatically creates output directory structure on initialization.
+
 data_loader.py - Handles all file I/O with automatic header detection, column name normalization, intelligent column finding using multiple strategies, data validation, and LRU caching for performance optimization.
+
 plotting_manager.py - Manages all visualizations with consistent styling, handling five plot types: full pilot period comparisons, individual archetype heat events, averaged archetype heat events, period intersections, and AC versus no-AC comparisons.
 
 <h3>Processing Workflow</h3>
