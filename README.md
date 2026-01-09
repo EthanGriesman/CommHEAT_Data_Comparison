@@ -70,7 +70,7 @@ Manages all visualizations with consistent styling. Supports five plot types:
 - Sets up UTF-8 logging for Windows compatibility
 
 ## Useage
-The following command runs the entire pipeline
+The following command begins the entire pipeline
 
 ```bash
 python starting1.py
