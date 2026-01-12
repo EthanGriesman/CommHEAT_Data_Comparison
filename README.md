@@ -192,6 +192,20 @@ python clear_output.py
 - High-resolution PNG plots
 - Performance-optimized cached simulation data
 
+NOTE: The script will create 4 directories to save output:
+
+CommHEAT Output/
+├── comparisons/ <- raw excel files comparing temperature and humidity across both archetypes for an address
+├── hobo_data_processed/ <- hobologger data converted into celsius 
+├── mse_statistics/ 
+├── plots/
+│   ├── ac_noac_period_intersection/
+│   ├── entire_pilot_period/
+│   ├── heat_events_averaged_archetypes/
+│   ├── heat_events_each_archetype/
+│   └── period_intersection_no_archetypes/
+└── HoboHouseIndex.xlsx
+
 ---
 
 ## License
