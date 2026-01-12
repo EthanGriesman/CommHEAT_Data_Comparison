@@ -195,6 +195,7 @@ python clear_output.py
 NOTE: The script will create 4 directories to save output:
 
 CommHEAT Output/
+
 ├── comparisons/ <- raw excel files comparing temperature and humidity across both archetypes for an address
 
 ├── hobo_data_processed/ <- hobologger data converted into celsius 
