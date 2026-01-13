@@ -167,7 +167,7 @@ python clear_output.py
   - Averaged archetype plots combining multiple models
 - Batch processing significantly reduces file I/O overhead
 
-NOTE: The section below within config.py handles heat events and baseline periods. To avoid errors with how the script loads in raw excel data, new heat events and baseline periods are to be added in the following format: H1, H2, H3, ...+HN, B1, B2, B3, ...+BN where H indicates each heat event with a start and end date, and B indicates each baseline period with a start and end date. The full set of heat events should precede all baseline events.
+NOTE: The section below within config.py specifies all heat events and baseline periods. To avoid errors with how the script loads in raw excel data, new heat events and baseline periods are to be added in the following format. The full set of heat events should precede the full set of baseline events. 
 
 ```python
 class HeatEvents:
