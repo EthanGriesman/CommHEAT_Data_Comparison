@@ -1,7 +1,7 @@
 <h1 align="center">CommHEAT Data Analysis Pipeline</h1>
 
 ## Overview
-The **CommHEAT Data Analysis Pipeline** processes HOBO temperature sensor data, compares it with EnergyPlus building simulation outputs, and generates statistical analyses and visualizations. The system is designed to validate residential building energy models by comparing simulated indoor temperatures against measured sensor data during summer 2025 heat events.
+The **CommHEAT Data Analysis Pipeline** processes HOBO temperature sensor data, compares it with EnergyPlus building simulation outputs, and generates statistical analyses and visualizations. The system is designed to validate residential building energy models by comparing simulated indoor temperatures against measured sensor data during summer 2025 heat events. 
 
 ---
 
@@ -167,7 +167,7 @@ python clear_output.py
   - Averaged archetype plots combining multiple models
 - Batch processing significantly reduces file I/O overhead
 
-NOTE:
+NOTE: The section below within config.py is a configgurable list of either heat or baseline events.
 
 ```python
 class HeatEvents:
