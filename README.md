@@ -167,7 +167,7 @@ python clear_output.py
   - Averaged archetype plots combining multiple models
 - Batch processing significantly reduces file I/O overhead
 
-NOTE: The section below within config.py is a configgurable list of either heat or baseline events.
+NOTE: The section below within config.py handles heat events and baseline periods. To avoid errors with how the script loads in raw excel data, new heat events and baseline periods are to be added in the following format: H1, H2, H3, ...+HN, B1, B2, B3, ...+BN where H indicates each heat event with a start and end date, and B indicates each baseline period with a start and end date. The full set of heat events should precede all baseline events.
 
 ```python
 class HeatEvents:
@@ -227,7 +227,7 @@ class HeatEvents:
 - High-resolution PNG plots
 - Performance-optimized cached simulation data
 
-NOTE: The script will create 4 directories to save output:
+NOTE: Once the workflow has finished, 4 directories will be generated to save output:
 
 - **comparisons/**
   - Raw Excel files comparing temperature and humidity across both archetypes for each address.
@@ -244,7 +244,7 @@ NOTE: The script will create 4 directories to save output:
   - **entire_pilot_period/**
     - Visualizations covering the full pilot study duration.
   - **heat_events_averaged_archetypes/**
-    - Heat event plots averaged across archetypes.
+    - Heat event plots averaged across all archetypes.
   - **heat_events_each_archetype/**
     - Heat event plots generated separately for each archetype.
   - **period_intersection_no_archetypes/**
