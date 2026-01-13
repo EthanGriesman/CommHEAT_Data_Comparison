@@ -200,11 +200,11 @@ CommHEAT Output/
 
 ├── hobo_data_processed/ <- hobologger data converted into celsius 
 
-├── mse_statistics/ 
+├── mse_statistics/ <- mean square error information
 
 ├── plots/
 
-│   ├── ac_noac_period_intersection/
+│   ├── ac_noac_period_intersection/ <- comparison between no ac and ac per address over the period both the hobologgers were in use, and the simulation was running
 
 │   ├── entire_pilot_period/
 
